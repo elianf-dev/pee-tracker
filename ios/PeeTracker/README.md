@@ -1,9 +1,23 @@
-# PeeTracker (iOS) — Phase 1
+# PeeTracker (iOS)
 
-Phase 1 scope only: Firebase Auth (email/password, Sign in with Apple, Sign in with
-Google) and stopwatch-timed logging into the shared `test-group-phase1` group. No
-groups UI, invite codes, leaderboards, streaks, or badges yet — see
-`backend/docs/SCHEMA.md` for the full phase plan.
+> ## ⚠️ This target does not currently work
+>
+> The Swift sources cover all four phases — auth, groups, leaderboards, streaks and badges —
+> but `Groups/GroupsViewModel.swift` still calls `httpsCallable("createGroup")`,
+> `"joinGroup"` and `"leaveGroup"`. Those Cloud Functions are **not deployed and cannot be**:
+> the Firebase project is on the free Spark plan. Android was ported to write Firestore
+> directly; iOS never was. Groups therefore cannot be created or joined here at all, which
+> makes most of the rest unreachable.
+>
+> Nothing in this tree has ever been compiled either — it was authored on Windows, with no
+> Xcode. Treat the setup below as necessary but not sufficient: you'd also need to port the
+> group/leaderboard/streak/badge writes to direct Firestore calls, mirroring
+> `android/PeeTracker/app/src/main/kotlin/com/peetracker/app/data/remote/`, and match
+> `backend/firestore.rules`. iOS is currently deprioritized.
+
+Firebase Auth (email/password, Sign in with Apple, Sign in with Google) plus stopwatch-timed
+logging, groups, leaderboards, streaks and badges — see `backend/docs/SCHEMA.md` for the data
+contract and its "Spark Mode" section for what the client is responsible for without a server.
 
 This project was authored on Windows, where Xcode doesn't run. There is
 intentionally no `.xcodeproj` checked in — it's a generated, fragile bundle format
@@ -16,8 +30,8 @@ which produces the `.xcodeproj` on demand.
 1. Install XcodeGen: `brew install xcodegen`
 2. Add your Firebase config file: place `GoogleService-Info.plist` (downloaded from
    the Firebase console) at `PeeTracker/PeeTracker/GoogleService-Info.plist`. It is
-   deliberately not checked into this repo — it's per-environment and the
-   `default` project id in `backend/.firebaserc` is a placeholder.
+   deliberately not checked into this repo. `backend/.firebaserc` points at the real
+   project, `streamline-ddf51`.
 3. From `ios/PeeTracker/`, run:
 
    ```
