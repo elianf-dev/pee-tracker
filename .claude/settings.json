@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew:*)",
+      "Bash(adb:*)",
+      "Bash(npm run test:rules)",
+      "Bash(npm run emulators)",
+      "Bash(npm test)",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(../node_modules/.bin/tsc:*)",
+      "Bash(./node_modules/.bin/firebase firestore:*)",
+      "Bash(./node_modules/.bin/firebase emulators:*)"
+    ],
+    "deny": [
+      "Bash(./gradlew publish:*)",
+      "Bash(npm publish:*)",
+      "Read(./android/PeeTracker/app/google-services.json)",
+      "Read(./android/PeeTracker/local.properties)"
+    ]
+  }
+}
