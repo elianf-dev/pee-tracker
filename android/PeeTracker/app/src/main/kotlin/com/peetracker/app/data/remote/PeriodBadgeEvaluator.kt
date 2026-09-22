@@ -3,6 +3,7 @@ package com.peetracker.app.data.remote
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.peetracker.app.data.model.LeaderboardEntry
+import com.peetracker.app.util.runCatchingCancellable
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -108,7 +109,11 @@ class PeriodBadgeRepository @Inject constructor(
     private suspend fun awardBadges(groupId: String, periodKey: String, awards: List<BadgeAward>) {
         for (award in awards) {
             val badgeId = "${periodKey}_${award.type}"
-            runCatching {
+            // A losing race on an already-awarded badge is expected and ignored, but cancellation
+            // is not a failure to swallow: runCatching catches Throwable, so without rethrowing
+            // CancellationException a cancelled scope would keep looping and firing further
+            // writes after its owner is gone.
+            runCatchingCancellable {
                 firestore.document(FirestorePaths.groupBadgeDoc(groupId, badgeId))
                     .set(
                         hashMapOf(

@@ -187,8 +187,15 @@ the accepted trust trade-off described in the Spark Mode section above.
 
 Awarded badges. `badgeId` is `${periodKey}_${badgeType}` for period badges (`camel_of_day`,
 `camel_of_week`, `most_regular`) or `${uid}_${badgeType}` for personal streak badges
-(`streak_7`, `streak_30`) — so re-earning a streak badge overwrites the same doc rather than
-creating duplicates. Live-listened for the celebratory "you got a badge" toast.
+(`streak_7`, `streak_30`). Live-listened for the celebratory "you got a badge" toast.
+
+⚠️ A streak badge id is stable per user per milestone, so re-earning one after a broken streak
+targets a doc that **already exists** — and badges are write-once here (`create` only; `update`
+and `delete` are denied). An earlier revision of this doc claimed the second award "overwrites
+the same doc"; it does not, the rules reject it. A writer must check for the badge first and skip
+it if present. `LogRepository.submitLog` does that inside its transaction, because bundling an
+unconditional badge write with the log write meant a stale badge doc failed the whole
+transaction and silently dropped the user's log, leaderboard credit and streak.
 
 | Field | Type | Notes |
 |---|---|---|

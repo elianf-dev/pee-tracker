@@ -103,11 +103,15 @@ class GroupRepository @Inject constructor(
         if (!groupSnap.exists()) {
             throw InvalidInviteCodeException("That invite code doesn't match any group")
         }
-        val currentCount = groupSnap.getLong("memberCount") ?: 0L
         val name = groupSnap.getString("name").orEmpty()
 
         val batch = firestore.batch()
-        batch.update(groupRef, "memberCount", currentCount + 1)
+        // increment(), not a read-then-write of a client-side count: two friends opening the same
+        // invite at once would both read the same value, both write value+1, and the second batch
+        // would resolve to a delta of 0 against the server's actual value — failing the rules'
+        // exactly-+1 check and rejecting that user's membership write along with it, with no
+        // retry. The transform resolves server-side, so rules still see a genuine +1.
+        batch.update(groupRef, "memberCount", FieldValue.increment(1))
         batch.set(
             groupRef.collection("members").document(uid),
             hashMapOf(
@@ -132,11 +136,11 @@ class GroupRepository @Inject constructor(
         val uid = user.uid
 
         val groupRef = firestore.document(FirestorePaths.groupPath(groupId))
-        val groupSnap = groupRef.get().await()
-        val currentCount = groupSnap.getLong("memberCount") ?: 1L
 
         val batch = firestore.batch()
-        batch.update(groupRef, "memberCount", currentCount - 1)
+        // See joinGroup: increment() avoids the same stale-read race on the way out, and removes
+        // the group read that existed only to compute the new count.
+        batch.update(groupRef, "memberCount", FieldValue.increment(-1))
         batch.delete(groupRef.collection("members").document(uid))
         batch.update(
             firestore.document(FirestorePaths.userDoc(uid)),

@@ -21,8 +21,10 @@ data class UserProfile(
     @get:PropertyName("authProviders") @set:PropertyName("authProviders")
     var authProviders: List<String> = emptyList(),
 
-    // Server-managed only: written exclusively by the createGroup/joinGroup/leaveGroup callables
-    // via the Admin SDK. Firestore rules reject any client write that changes this field.
+    // Client-writable in Spark mode. GroupRepository's createGroup/joinGroup/leaveGroup update
+    // this directly via arrayUnion/arrayRemove, batched with the membership write — there are no
+    // callables and no Admin SDK to do it server-side, and the rules allow a user to write their
+    // own doc. See SCHEMA.md's Spark Mode section.
     @get:PropertyName("currentGroupIds") @set:PropertyName("currentGroupIds")
     var currentGroupIds: List<String> = emptyList(),
 

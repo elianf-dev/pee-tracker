@@ -47,6 +47,23 @@ class LogRepository @Inject constructor(
             val dailySnap = txn.get(dailyRef)
             val weeklySnap = txn.get(weeklyRef)
 
+            // Every read has to happen before the first write in a Firestore transaction, so the
+            // streak (and the milestone badge it may imply) is computed up here rather than after
+            // the log write.
+            val currentStreak = userSnap.toObject(UserProfile::class.java)?.streak ?: Streak()
+            val newStreak = StreakLogic.computeUpdate(currentStreak, dateKeyLocal)
+            val badgeType = StreakLogic.milestoneBadgeType(newStreak.current)
+            val badgeRef = badgeType?.let {
+                firestore.document(FirestorePaths.groupBadgeDoc(groupId, "${uid}_$it"))
+            }
+            // Badges are write-once in firestore.rules (create only; update and delete are
+            // denied), and the doc id is stable per user per milestone. A streak that breaks and
+            // is then re-earned crosses the same milestone a second time, so setting the badge
+            // unconditionally would be an update of an existing doc — denied, which would fail
+            // this entire transaction and silently lose the user's log, leaderboard credit and
+            // streak along with it. Skip the award when it is already there.
+            val badgeAlreadyAwarded = badgeRef != null && txn.get(badgeRef).exists()
+
             txn.set(
                 logRef,
                 hashMapOf(
@@ -64,8 +81,6 @@ class LogRepository @Inject constructor(
             applyLeaderboardDelta(txn, dailyRef, dailySnap, uid, displayName, durationSeconds)
             applyLeaderboardDelta(txn, weeklyRef, weeklySnap, uid, displayName, durationSeconds)
 
-            val currentStreak = userSnap.toObject(UserProfile::class.java)?.streak ?: Streak()
-            val newStreak = StreakLogic.computeUpdate(currentStreak, dateKeyLocal)
             if (newStreak != currentStreak) {
                 txn.update(
                     userRef,
@@ -78,10 +93,7 @@ class LogRepository @Inject constructor(
                 )
             }
 
-            StreakLogic.milestoneBadgeType(newStreak.current)?.let { badgeType ->
-                val badgeRef = firestore.document(
-                    FirestorePaths.groupBadgeDoc(groupId, "${uid}_$badgeType")
-                )
+            if (badgeType != null && badgeRef != null && !badgeAlreadyAwarded) {
                 txn.set(
                     badgeRef,
                     hashMapOf(

@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.peetracker.app.data.model.LeaderboardEntry
 import com.peetracker.app.data.remote.LeaderboardRepository
 import com.peetracker.app.data.remote.PeriodBadgeRepository
+import com.peetracker.app.util.runCatchingCancellable
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,8 +80,11 @@ class LeaderboardViewModel @Inject constructor(
         // PeriodBadgeRepository already swallows the expected "someone else wrote it first"
         // failure, and this is wrapped again here so it can never surface to the UI.
         viewModelScope.launch {
-            runCatching { periodBadgeRepository.finalizeYesterdayIfNeeded(groupId) }
-            runCatching { periodBadgeRepository.finalizeLastWeekIfNeeded(groupId) }
+            // runCatchingCancellable, not runCatching: the latter catches CancellationException
+            // too, so a scope cancelled during the first call would still run the second and keep
+            // hitting a group the user may have just left.
+            runCatchingCancellable { periodBadgeRepository.finalizeYesterdayIfNeeded(groupId) }
+            runCatchingCancellable { periodBadgeRepository.finalizeLastWeekIfNeeded(groupId) }
         }
     }
 

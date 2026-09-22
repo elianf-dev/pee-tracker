@@ -15,6 +15,7 @@ import {
   deleteDoc,
   writeBatch,
   serverTimestamp,
+  increment,
 } from "firebase/firestore";
 
 const PROJECT_ID = "pee-tracker-rules-test";
@@ -344,6 +345,41 @@ describe("groups/{groupId} memberCount update (join/leave batches)", () => {
     await addMember("bob");
     const bobDb = testEnv.authenticatedContext("bob").firestore();
     await assertFails(updateDoc(doc(bobDb, `groups/${GROUP_ID}`), { memberCount: 1 }));
+  });
+
+  // The Android client writes memberCount with FieldValue.increment() rather than a
+  // read-then-write of a client-side count, to avoid two concurrent joiners both computing the
+  // same value. That only works if rules see the *resolved* post-transform value, so the
+  // exactly-+1 check still passes — pinning that here rather than trusting it.
+  it("accepts a join that increments memberCount via a server-side transform", async () => {
+    await seedGroupWithOwner("alice", 1);
+    const bobDb = testEnv.authenticatedContext("bob").firestore();
+    const batch = writeBatch(bobDb);
+    batch.update(doc(bobDb, `groups/${GROUP_ID}`), { memberCount: increment(1) });
+    batch.set(doc(bobDb, `groups/${GROUP_ID}/members/bob`), {
+      displayName: "Bob",
+      photoURL: null,
+      role: "member",
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  it("accepts a leave that decrements memberCount via a server-side transform", async () => {
+    await seedGroupWithOwner("alice", 2);
+    await addMember("bob");
+    const bobDb = testEnv.authenticatedContext("bob").firestore();
+    const batch = writeBatch(bobDb);
+    batch.update(doc(bobDb, `groups/${GROUP_ID}`), { memberCount: increment(-1) });
+    batch.delete(doc(bobDb, `groups/${GROUP_ID}/members/bob`));
+    await assertSucceeds(batch.commit());
+  });
+
+  it("still denies a bare increment transform with no membership change", async () => {
+    await seedGroupWithOwner("alice", 1);
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(
+      updateDoc(doc(aliceDb, `groups/${GROUP_ID}`), { memberCount: increment(1) })
+    );
   });
 
   it("denies changing any other field alongside memberCount", async () => {
