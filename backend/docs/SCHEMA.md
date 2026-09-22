@@ -118,10 +118,14 @@ Unchanged shape from Phase 1, now scoped to a real group instead of the hardcode
 | `volume` | string | one of `"low" \| "medium" \| "high"` |
 | `dateKeyLocal` | string | `"YYYY-MM-DD"`, computed client-side from device tz at write time |
 | `weekKeyLocal` | string | ISO week, `"YYYY-Www"`, computed client-side at write time |
-| `createdAt` | timestamp | `serverTimestamp()`, used for ordering |
+| `createdAt` | timestamp | `serverTimestamp()`, used for ordering; rules require it to equal `request.time` on create, so it is the server's clock and not a client-chosen value |
 
-Create requires group membership (checked via `groups/{groupId}/members/{uid}` existing).
-Edit/delete: author-only, within 5 minutes of `createdAt` (enforced in rules).
+Create requires group membership (checked via `groups/{groupId}/members/{uid}` existing) and
+`createdAt == request.time`. Edit/delete: author-only, within 5 minutes of `createdAt` (enforced
+in rules). Because the window is measured from `createdAt`, that field is only meaningful as a
+bound if the client can't choose it — hence the create check — and an edit may not rewrite it,
+which would otherwise renew the window on every edit and make it unbounded. An edit also may not
+rewrite `uid`, which would re-attribute the log to another member.
 
 ### `inviteCodes/{code}`
 
@@ -306,9 +310,10 @@ backing any of it):
 - `groups/{groupId}/members/{memberId}`: read allowed to any existing member of that group.
   `create` allowed only for `memberId == request.auth.uid`, with `role` matching whether they're
   that group's `ownerUid`. `delete` allowed only by the member themself (leaving).
-- `groups/{groupId}/logs/{logId}`: unchanged from Phase 3 — create requires
-  `request.auth.uid == request.resource.data.uid` and group membership; read allowed to any
-  member; update/delete restricted to the author within a 5-minute grace window.
+- `groups/{groupId}/logs/{logId}`: create requires `request.auth.uid ==
+  request.resource.data.uid`, group membership, and `createdAt == request.time`; read allowed to
+  any member; update/delete restricted to the author within a 5-minute grace window measured
+  from `createdAt`, with `uid` and `createdAt` themselves immutable on update.
 - `groups/{groupId}/leaderboardDaily/{dateKey}` and `leaderboardWeekly/{weekKey}`: read allowed to
   any group member. `create`/`update` allowed to any group member, but constrained to only
   touching their *own* key under `entries` (checked via `request.resource.data.diff(resource.data)`

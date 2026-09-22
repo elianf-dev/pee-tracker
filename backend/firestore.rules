@@ -90,10 +90,26 @@ service cloud.firestore {
 
       match /logs/{logId} {
         allow read: if isGroupMember(groupId);
+
+        // createdAt has to be the server's own clock — the client writes serverTimestamp(),
+        // which rules see as request.time. The edit window below is measured from it, so a
+        // client-chosen createdAt would be a self-granted window of any length (set it far
+        // enough forward and the log stays editable indefinitely).
         allow create: if isSignedIn()
           && request.resource.data.uid == request.auth.uid
+          && request.resource.data.createdAt == request.time
           && isGroupMember(groupId);
-        allow update, delete: if isSignedIn()
+
+        // Within the window, an edit may not rewrite uid (no re-attributing your log to
+        // somebody else) nor createdAt (which would renew the window on every edit and make
+        // it unbounded). Split from delete, which has no request.resource to compare against.
+        allow update: if isSignedIn()
+          && resource.data.uid == request.auth.uid
+          && resource.data.createdAt > request.time - duration.value(5, 'm')
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.createdAt == resource.data.createdAt;
+
+        allow delete: if isSignedIn()
           && resource.data.uid == request.auth.uid
           && resource.data.createdAt > request.time - duration.value(5, 'm');
       }

@@ -70,6 +70,20 @@ async function seedGroupWithOwner(ownerUid: string, memberCount = 1) {
   });
 }
 
+async function seedLog(logId: string, uid: string) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `groups/${GROUP_ID}/logs/${logId}`), {
+      uid,
+      displayName: uid,
+      durationSeconds: 30,
+      volume: "medium",
+      dateKeyLocal: "2026-09-07",
+      weekKeyLocal: "2026-W36",
+      createdAt: serverTimestamp(),
+    });
+  });
+}
+
 async function addMember(uid: string, role: "owner" | "member" = "member") {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), `groups/${GROUP_ID}/members/${uid}`), {
@@ -363,6 +377,47 @@ describe(`groups/{groupId}/logs/{logId}`, () => {
         createdAt: serverTimestamp(),
       })
     );
+  });
+
+  // Regression: create used to accept any createdAt the client sent. The edit window is
+  // measured from that field, so a client could postdate a log and keep it editable forever.
+  it("denies creating a log with a client-chosen createdAt", async () => {
+    await seedGroupWithOwner("alice");
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(
+      setDoc(doc(aliceDb, logPath("log1")), {
+        uid: "alice",
+        displayName: "Alice",
+        durationSeconds: 30,
+        volume: "medium",
+        dateKeyLocal: "2026-09-07",
+        weekKeyLocal: "2026-W36",
+        createdAt: new Date("2099-01-01T00:00:00Z"),
+      })
+    );
+  });
+
+  it("denies an edit that rewrites createdAt (which would renew the edit window)", async () => {
+    await seedGroupWithOwner("alice");
+    await seedLog("log1", "alice");
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(
+      updateDoc(doc(aliceDb, logPath("log1")), { createdAt: serverTimestamp() })
+    );
+  });
+
+  it("denies an edit that re-attributes the log to another user", async () => {
+    await seedGroupWithOwner("alice");
+    await seedLog("log1", "alice");
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(updateDoc(doc(aliceDb, logPath("log1")), { uid: "bob" }));
+  });
+
+  it("still lets the author edit other fields inside the window", async () => {
+    await seedGroupWithOwner("alice");
+    await seedLog("log1", "alice");
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await assertSucceeds(updateDoc(doc(aliceDb, logPath("log1")), { volume: "high" }));
   });
 
   it("denies a non-member creating a log", async () => {
