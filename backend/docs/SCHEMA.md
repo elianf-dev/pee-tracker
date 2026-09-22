@@ -76,7 +76,7 @@ retry the creation rather than assuming it always exists.
 | Field | Type | Notes |
 |---|---|---|
 | `name` | string | set at creation, 1-40 chars, not editable in Phase 2 |
-| `inviteCode` | string | denormalized copy of the code, e.g. `"PEE-4X9K"`; canonical lookup is `inviteCodes/{code}` |
+| `inviteCode` | string | denormalized copy of the code, e.g. `"PEE-4X9KQ7MT"`; canonical lookup is `inviteCodes/{code}` |
 | `ownerUid` | string | the creator |
 | `memberCount` | number | maintained by `createGroup`/`joinGroup`/`leaveGroup` |
 | `settings` | map | `{ dailyResetHour: number, weeklyResetWeekday: number }` — unused (no cron in Spark mode), defaults `{0, 0}` |
@@ -132,16 +132,25 @@ Top-level lookup collection, `code -> groupId`.
 | `groupId` | string | |
 | `createdAt` | timestamp | |
 
-Code format: `"PEE-XXXX"` where `XXXX` is 4 random uppercase chars from the charset
+Code format: `"PEE-XXXXXXXX"` where `XXXXXXXX` is 8 random uppercase chars from the charset
 `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (excludes `0/O/1/I/L` to avoid visual ambiguity when a friend
 reads a code aloud or off a screen). Generated client-side (ported from
 `functions/src/lib/inviteCode.ts`'s logic) with a collision retry loop: `get()` the candidate
-code doc, regenerate if it already exists.
+code doc, regenerate if it already exists. Both generators draw from a CSPRNG (`SecureRandom` on
+Android, `crypto.randomInt` in the functions port), because a predictable code is as weak as a
+short one.
 
 **Spark mode rules**: `get` (reading one exact code you already know) is allowed for any signed-in
-user; `list` (querying/browsing the whole collection) is denied — so codes can't be enumerated or
-brute-forced by listing, only looked up one at a time by a friend who was actually given the
-string. `create` is allowed if the code doesn't already exist yet (collision-safe) — a client
+user; `list` (querying/browsing the whole collection) is denied.
+
+⚠️ **Denying `list` is not by itself a defence against brute force**, and an earlier revision of
+this doc wrongly claimed it was. Any signed-in user may `get` any code they care to name, one at
+a time, and nothing in Firestore rules can rate-limit that. At the original length of 4 the code
+space was 31⁴ ≈ 923k, so walking it was entirely practical — and since a code yields a `groupId`,
+and `members/{uid}` create asks only that you know the `groupId` and use your own uid, that walk
+ended in joining a stranger's group. It also burns the project's Spark read quota, which is the
+owner's to pay. The length is now 8 (31⁸ ≈ 8.5e11), which makes the walk infeasible and restores
+the "you must have been given the string" assumption the join gate rests on. `create` is allowed if the code doesn't already exist yet (collision-safe) — a client
 creates this doc as the second step of `createGroup`, right after the `groups/{groupId}` doc it
 points to already exists.
 
@@ -290,7 +299,10 @@ backing any of it):
   doc yet). `list` denied (no browsing/enumeration). `create` allowed if `ownerUid ==
   request.auth.uid` and `memberCount == 1`. `update`
   allowed only if the only changed field is `memberCount`, and only by exactly `+1` or `-1` (join
-  or leave) — `name`/`settings`/`ownerUid` are immutable after creation.
+  or leave) — `name`/`settings`/`ownerUid` are immutable after creation. Each direction also
+  requires the requester's own membership doc to cross the matching edge in the same write
+  (`+1` = `!exists` before and `existsAfter`; `-1` = the reverse), so a member can't replay a
+  bare increment or decrement and drift the count away from the real roster.
 - `groups/{groupId}/members/{memberId}`: read allowed to any existing member of that group.
   `create` allowed only for `memberId == request.auth.uid`, with `role` matching whether they're
   that group's `ownerUid`. `delete` allowed only by the member themself (leaving).

@@ -11,7 +11,7 @@ struct JoinGroupView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            TextField("Invite code (e.g. PEE-4X9K)", text: $code)
+            TextField("Invite code (e.g. PEE-4X9KQ7MT)", text: $code)
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()

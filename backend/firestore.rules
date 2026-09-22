@@ -51,17 +51,21 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.memberCount == 1;
 
-      // Only memberCount may change post-creation, and only by exactly +1 (joining — the
-      // membership doc must exist by the end of this same write batch) or -1 (leaving — the
-      // requester must already be a member before this batch's writes apply).
+      // Only memberCount may change post-creation, and only by exactly +1 (joining) or -1
+      // (leaving). Each direction additionally requires the requester's own membership doc to
+      // actually cross the matching edge in this same write: +1 means "was not a member, now
+      // is", -1 means "was a member, now is not". Checking only the post-state (or only the
+      // pre-state) would let an existing member replay +1 or -1 forever and drift the count.
       allow update: if isSignedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount'])
         && (
           (request.resource.data.memberCount == resource.data.memberCount + 1
+            && !exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid))
             && existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)))
           ||
           (request.resource.data.memberCount == resource.data.memberCount - 1
-            && isGroupMember(groupId))
+            && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid))
+            && !existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)))
         );
 
       allow delete: if false;

@@ -6,7 +6,7 @@ Android/Compose) share one Firebase backend.
 See `.claude/plans` (in the Claude Code session that built this) for the full multi-phase plan.
 This repo currently implements:
 - **Phase 1: Auth + basic logging**
-- **Phase 2: invite-code groups** — create/join a group via a `PEE-XXXX` code, share it with
+- **Phase 2: invite-code groups** — create/join a group via a `PEE-XXXXXXXX` code, share it with
   friends, log bathroom trips into your real group instead of a test placeholder.
 - **Phase 3: leaderboards + resets** — live daily/weekly leaderboards per group, maintained
   server-side by Cloud Functions triggers on every log create/delete, plus scheduled functions

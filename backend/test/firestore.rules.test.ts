@@ -315,6 +315,23 @@ describe("groups/{groupId} memberCount update (join/leave batches)", () => {
     await assertFails(updateDoc(doc(bobDb, `groups/${GROUP_ID}`), { memberCount: 0 }));
   });
 
+  // Regression: the rule used to check only existsAfter() for +1 and only exists() for -1,
+  // both of which stay true for somebody who is already a member and stays one. That let any
+  // member replay a bare +1 or -1 as often as they liked and drift memberCount off the real
+  // roster (including negative). Each direction now has to cross the membership edge.
+  it("denies an existing member incrementing memberCount without actually joining", async () => {
+    await seedGroupWithOwner("alice", 1);
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await assertFails(updateDoc(doc(aliceDb, `groups/${GROUP_ID}`), { memberCount: 2 }));
+  });
+
+  it("denies an existing member decrementing memberCount without actually leaving", async () => {
+    await seedGroupWithOwner("alice", 2);
+    await addMember("bob");
+    const bobDb = testEnv.authenticatedContext("bob").firestore();
+    await assertFails(updateDoc(doc(bobDb, `groups/${GROUP_ID}`), { memberCount: 1 }));
+  });
+
   it("denies changing any other field alongside memberCount", async () => {
     await seedGroupWithOwner("alice", 1);
     const bobDb = testEnv.authenticatedContext("bob").firestore();

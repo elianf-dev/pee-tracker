@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,8 +15,13 @@ data class JoinGroupResult(val groupId: String, val name: String)
 class InvalidInviteCodeException(message: String) : Exception(message)
 
 private const val INVITE_CODE_CHARSET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-private const val INVITE_CODE_LENGTH = 4
+// 8 chars over a 31-char alphabet is ~8.5e11 codes. The old length of 4 (~923k) was small
+// enough to walk one `get` at a time, which firestore.rules permits for any signed-in user —
+// denying `list` does not prevent that. Keep in sync with backend/functions inviteCode.ts.
+private const val INVITE_CODE_LENGTH = 8
 private const val MAX_CREATE_ATTEMPTS = 10
+
+private val secureRandom = SecureRandom()
 
 @Singleton
 class GroupRepository @Inject constructor(
@@ -74,7 +80,7 @@ class GroupRepository @Inject constructor(
                 // treats a second write to an existing doc as an update, which the rules deny
                 // for that collection) — retry with a fresh code AND a fresh groupId. The
                 // groups/{groupId} doc from this attempt is left orphaned (nobody has its id,
-                // and groups can't be deleted by clients per the rules); with a ~1M-code space
+                // and groups can't be deleted by clients per the rules); with a ~8.5e11-code space
                 // this should essentially never happen.
                 lastError = e
             }
@@ -141,7 +147,10 @@ class GroupRepository @Inject constructor(
     }
 
     private fun randomInviteCode(): String {
-        val segment = (1..INVITE_CODE_LENGTH).map { INVITE_CODE_CHARSET.random() }.joinToString("")
+        // SecureRandom, not Random.Default: a predictable code is as weak as a short one.
+        val segment = (1..INVITE_CODE_LENGTH)
+            .map { INVITE_CODE_CHARSET[secureRandom.nextInt(INVITE_CODE_CHARSET.length)] }
+            .joinToString("")
         return "PEE-$segment"
     }
 }

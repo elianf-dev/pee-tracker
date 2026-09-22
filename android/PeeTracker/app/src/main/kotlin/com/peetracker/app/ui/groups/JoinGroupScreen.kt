@@ -55,7 +55,7 @@ fun JoinGroupScreen(
             OutlinedTextField(
                 value = code,
                 onValueChange = { code = it.uppercase() },
-                label = { Text("Code, e.g. PEE-4X9K") },
+                label = { Text("Code, e.g. PEE-4X9KQ7MT") },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                 modifier = Modifier.fillMaxWidth()
             )
