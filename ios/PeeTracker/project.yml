@@ -1,0 +1,97 @@
+name: PeeTracker
+
+options:
+  bundleIdPrefix: com.peetracker
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    TARGETED_DEVICE_FAMILY: "1"
+
+packages:
+  FirebaseiOS:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 11.0.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 8.0.0
+
+targets:
+  PeeTracker:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: PeeTracker
+    info:
+      path: PeeTracker/Info.plist
+      properties:
+        CFBundleDisplayName: PeeTracker
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        # GoogleSignIn needs a URL scheme (REVERSED_CLIENT_ID from GoogleService-Info.plist)
+        # and a GIDClientID entry added here once that file exists — see README.
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - peetracker
+        UIBackgroundModes:
+          - remote-notification
+    entitlements:
+      path: PeeTracker/PeeTracker.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
+        aps-environment: development
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.peetracker.app
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - package: FirebaseiOS
+        product: FirebaseCore
+      - package: FirebaseiOS
+        product: FirebaseAuth
+      - package: FirebaseiOS
+        product: FirebaseFirestore
+      - package: FirebaseiOS
+        product: FirebaseMessaging
+      - package: FirebaseiOS
+        product: FirebaseFunctions
+      - package: GoogleSignIn
+        product: GoogleSignIn
+
+  PeeTrackerTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: PeeTrackerTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: PeeTracker
+
+schemes:
+  PeeTracker:
+    build:
+      targets:
+        PeeTracker: all
+        PeeTrackerTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PeeTrackerTests

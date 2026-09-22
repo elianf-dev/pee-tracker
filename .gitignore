@@ -1,0 +1,29 @@
+# Node / Firebase
+node_modules/
+backend/functions/lib/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+
+# iOS
+ios/PeeTracker/*.xcodeproj/
+ios/PeeTracker/.build/
+ios/PeeTracker/DerivedData/
+ios/PeeTracker/**/GoogleService-Info.plist
+
+# Android
+android/PeeTracker/.gradle/
+android/PeeTracker/build/
+android/PeeTracker/app/build/
+android/PeeTracker/local.properties
+android/PeeTracker/app/google-services.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.kotlin/

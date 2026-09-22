@@ -1,0 +1,15 @@
+{
+  "//": "Spark mode: no `functions` block here on purpose — this project runs on Firebase's free plan, which doesn't support Cloud Functions at all. `firebase deploy` (bare) only touches firestore.rules/indexes. The functions/ directory still exists, builds, and is unit-tested (see backend/docs/SCHEMA.md's 'Spark Mode' section) as an optional upgrade path if this project ever moves to Blaze — deploy it explicitly with `firebase deploy --only functions` after upgrading, there's nothing here stopping that.",
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "functions": { "port": 5001 },
+    "firestore": { "port": 8080 },
+    "pubsub": { "port": 8085 },
+    "ui": { "enabled": true, "port": 4000 },
+    "singleProjectMode": true
+  }
+}

@@ -1,0 +1,155 @@
+rules_version = '2';
+
+// Spark mode: no Cloud Functions are deployed for this project (see backend/docs/SCHEMA.md's
+// "Spark Mode" section). Every write below is authored directly by a client and validated only
+// by these declarative rules — there is no trusted server double-checking the arithmetic. That's
+// an accepted trade-off for a friends-only fun app running on Firebase's free plan, not an
+// oversight; see SCHEMA.md for the full reasoning per collection.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isGroupMember(groupId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      // No onUserCreate trigger in Spark mode — the client creates this doc itself right after
+      // sign-up, so the defaults are enforced here instead of server code.
+      allow create: if isOwner(uid)
+        && request.resource.data.currentGroupIds == []
+        && request.resource.data.streak == { 'current': 0, 'longest': 0, 'lastLogDateKey': '' }
+        && request.resource.data.fcmTokens == {};
+
+      // streak/currentGroupIds are no longer server-managed-only in Spark mode (no server
+      // exists to manage them) — the owner can write any field. See SCHEMA.md's Spark Mode
+      // trust-model note: this is honest about being self-corruptible, not a security promise.
+      allow update: if isOwner(uid);
+      allow delete: if false;
+    }
+
+    match /groups/{groupId} {
+      // get (one exact groupId you already know, e.g. from an invite-code lookup) is fine — same
+      // "unguessable auto-ID" trust argument as inviteCodes below, and required for joinGroup's
+      // client-side read of memberCount/name before the joiner has a members/{uid} doc yet. list
+      // (browsing/enumerating all groups) is not.
+      allow get: if isSignedIn();
+      allow list: if false;
+
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.memberCount == 1;
+
+      // Only memberCount may change post-creation, and only by exactly +1 (joining — the
+      // membership doc must exist by the end of this same write batch) or -1 (leaving — the
+      // requester must already be a member before this batch's writes apply).
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount'])
+        && (
+          (request.resource.data.memberCount == resource.data.memberCount + 1
+            && existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)))
+          ||
+          (request.resource.data.memberCount == resource.data.memberCount - 1
+            && isGroupMember(groupId))
+        );
+
+      allow delete: if false;
+
+      match /members/{memberId} {
+        allow read: if isGroupMember(groupId);
+
+        // The only realistic way to learn a groupId is via a real invite-code lookup (or
+        // already being a member) — groupIds are unguessable Firestore auto-IDs — so requiring
+        // just "you know the groupId and it's your own uid" is an acceptable join gate without
+        // a server. role must match whether you're that group's owner.
+        allow create: if isSignedIn()
+          && memberId == request.auth.uid
+          && request.resource.data.role == (
+               get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid
+                 ? 'owner' : 'member'
+             );
+
+        allow update: if false;
+        allow delete: if memberId == request.auth.uid;
+      }
+
+      match /logs/{logId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isSignedIn()
+          && request.resource.data.uid == request.auth.uid
+          && isGroupMember(groupId);
+        allow update, delete: if isSignedIn()
+          && resource.data.uid == request.auth.uid
+          && resource.data.createdAt > request.time - duration.value(5, 'm');
+      }
+
+      match /leaderboardDaily/{dateKey} {
+        allow read: if isGroupMember(groupId);
+        // A member may create/update this doc, but only their own key under `entries` may
+        // change — nobody can edit another member's count. `finalized`/`finalizedAt` may also
+        // be set (the opportunistic period-close, unrelated to any specific entry).
+        allow create: if isGroupMember(groupId)
+          && request.resource.data.entries.keys().hasOnly([request.auth.uid]);
+        allow update: if isGroupMember(groupId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['entries', 'updatedAt', 'finalized', 'finalizedAt'])
+          && request.resource.data.entries.diff(resource.data.entries).affectedKeys().hasOnly([request.auth.uid]);
+        allow delete: if false;
+      }
+
+      match /leaderboardWeekly/{weekKey} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId)
+          && request.resource.data.entries.keys().hasOnly([request.auth.uid]);
+        allow update: if isGroupMember(groupId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['entries', 'updatedAt', 'finalized', 'finalizedAt'])
+          && request.resource.data.entries.diff(resource.data.entries).affectedKeys().hasOnly([request.auth.uid]);
+        allow delete: if false;
+      }
+
+      match /badges/{badgeId} {
+        allow read: if isGroupMember(groupId);
+        // streak badges are self-awarded only; period badges may be written by any member
+        // ("first one to notice computes it") but must name a real member as the winner.
+        // No update/delete at all — combined with `create`-only semantics, a badge id that
+        // already exists is unwritable (Firestore treats a second write as `update`, which
+        // isn't granted), giving idempotent "first writer wins" for free.
+        allow create: if isGroupMember(groupId)
+          && (
+            (request.resource.data.type in ['streak_7', 'streak_30']
+              && request.resource.data.awardedToUid == request.auth.uid)
+            ||
+            (request.resource.data.type in ['camel_of_day', 'camel_of_week', 'most_regular']
+              && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.resource.data.awardedToUid)))
+          );
+        allow update, delete: if false;
+      }
+    }
+
+    match /inviteCodes/{code} {
+      // get (one exact code you already know) is fine; list (browsing/enumerating) is not.
+      allow get: if isSignedIn();
+      allow list: if false;
+      // A collision (doc already exists) is classified as `update` by Firestore, which isn't
+      // granted below — so this is naturally collision-safe without an explicit exists() check.
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
